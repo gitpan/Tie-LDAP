@@ -1,6 +1,6 @@
 # -*- mode: perl -*-
 #
-# $Id: LDAP.pm,v 1.1 1999/10/09 15:11:40 tai Exp $
+# $Id: LDAP.pm,v 1.2 1999/10/10 15:04:03 tai Exp $
 #
 
 package Tie::LDAP;
@@ -35,32 +35,34 @@ Storing data is as easy as fetching: just push hash reference
 - with the same structure as fetched hash - back in.
 
 Also, fetching/storing data into fetched hash reference will
-work as expected - it'll manipulate corresponding field in
+work as expected - it will manipulate corresponding field in
 fetched LDAP entry.
 
 =cut
 
 use strict;
 use Carp;
-use Net::LDAP;
+use Net::LDAPapi;
 use Tie::LDAP::Entry;
 
 use vars qw($DEBUG $VERSION);
 
 $DEBUG   = 0;
-$VERSION = '0.01';
+$VERSION = '0.02';
 
 sub TIEHASH {
     my $name = shift;
     my $opts = shift;
-    my $conn = new Net::LDAP($opts->{host} || 'localhost') || croak($@);
+    my $conn = new Net::LDAPapi($opts->{host} || 'localhost') || croak($@);
     my $mesg;
 
     print STDERR "[$name] TIEHASH\n" if $DEBUG;
 
-    if ($opts->{user}) {
-        $mesg = $conn->bind(dn => $opts->{user}, password => $opts->{pass});
-        $mesg->code && croak($mesg->error);
+    $conn->set_option(LDAP_OPT_SIZELIMIT, $opts->{maxsize} || 5000);
+    $conn->set_option(LDAP_OPT_TIMELIMIT, $opts->{maxwait} || 5000);
+
+    unless ($conn->bind_s($opts->{user}, $opts->{pass}) == LDAP_SUCCESS) {
+        croak($conn->errstring);
     }
     bless { conn => $conn, base => $opts->{base} }, $name;
 }
@@ -68,22 +70,30 @@ sub TIEHASH {
 sub FETCH {
     my $self = shift;
     my $path = shift;
-    my $mesg = $self->{conn}->search(base => $path, filter => '(!(dn=))');
-    my $data;
+    my $conn = $self->{conn};
+    my $mesg = $conn->search($path, LDAP_SCOPE_BASE, '(!(dn=))', [], 0);
+    my $data = {};
 
     print STDERR "[$self] FETCH\n" if $DEBUG;
-    print STDERR "[$self] FETCH - code: ", $mesg->code,  "\n" if $DEBUG;
-    print STDERR "[$self] FETCH - text: ", $mesg->error, "\n" if $DEBUG;
+    print STDERR "[$self] FETCH - path: $path\n" if $DEBUG;
 
-    return undef if $mesg->code;
+    return undef unless $mesg >= 0;
+    return undef unless $conn->result($mesg, 0, -1) != -1;
+    return undef unless $conn->first_entry;
 
-    if ($data = $mesg->as_struct->{$path}) {
-        tie %{$data}, 'Tie::LDAP::Entry', {
-            path => $path,
-            data => { %{$data} },
-            conn => $self->{conn},
-        };
+    ##
+    for (my $s = $conn->first_attribute; $s ; $s = $conn->next_attribute) {
+        $data->{$s} = [$conn->get_values_len($s)];
     }
+    $conn->msgfree;
+    $conn->abandon($mesg);
+
+    ##
+    tie %{$data}, 'Tie::LDAP::Entry', {
+        path => $path,
+        data => { %{$data} },
+        conn => $self->{conn},
+    };
     return $data;
 }
 
@@ -94,8 +104,8 @@ sub STORE {
 
     print STDERR "[$self] STORE\n" if $DEBUG;
 
-    $self->DELETE($path);
-    $self->{conn}->add(dn => $path, attr => [%{$data}]);
+    $self->{conn}->delete_s($path);
+    $self->{conn}->add_s($path, $data);
 }
 
 sub DELETE {
@@ -103,8 +113,9 @@ sub DELETE {
     my $path = shift;
 
     print STDERR "[$self] DELETE\n" if $DEBUG;
+    print STDERR "[$self] DELETE - path: $path\n" if $DEBUG;
 
-    $self->{conn}->delete($path);
+    $self->{conn}->delete_s($path);
 }
 
 sub CLEAR {
@@ -130,13 +141,17 @@ sub EXISTS {
 
 sub FIRSTKEY {
     my $self = shift;
+    my $conn = $self->{conn};
+    my $path;
 
     print STDERR "[$self] FIRSTKEY\n" if $DEBUG;
 
     return undef unless $self->{base};
 
-    $self->{list} =
-        $self->{conn}->search(base => $self->{base}, filter => '(!(dn=))');
+    $self->{mesg} = $conn->search($self->{base},
+                                  LDAP_SCOPE_ONELEVEL, '(!(dn=))', [], 0);
+
+    return undef if $self->{mesg} < 0;
 
     $self->NEXTKEY;
 }
@@ -144,14 +159,20 @@ sub FIRSTKEY {
 sub NEXTKEY {
     my $self = shift;
     my $last = shift;
-    my $data;
+    my $conn = $self->{conn};
+    my $path;
 
     print STDERR "[$self] NEXTKEY\n" if $DEBUG;
 
-    unless ($self->{list} && ($data = $self->{list}->shift_entry)) {
-        return undef;
-    }
-    $data->dn;
+    return undef unless $conn->result($self->{mesg}, 0, -1) != -1;
+    return undef unless $conn->first_entry;
+
+    $path = $conn->get_dn;
+
+    print STDERR "[$self] NEXTKEY - path: $path\n" if $DEBUG;
+
+    $conn->msgfree;
+    $path;
 }
 
 sub DESTROY {

@@ -1,5 +1,10 @@
-Changes
 LDAP.pm
 Makefile.PL
 MANIFEST
+README.TXT
 test.pl
+Entry/Changes
+Entry/Entry.pm
+Entry/MANIFEST
+Entry/Makefile.PL
+Entry/test.pl
