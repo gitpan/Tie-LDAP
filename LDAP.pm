@@ -90,7 +90,7 @@ use Tie::LDAP::Entry;
 use vars qw($DEBUG $VERSION);
 
 $DEBUG   = 0;
-$VERSION = '0.05';
+$VERSION = '0.06';
 
 sub TIEHASH {
     my $name = shift;
