@@ -1,8 +1,9 @@
+# -*- mode: perl -*-
+
 use ExtUtils::MakeMaker;
-# See lib/ExtUtils/MakeMaker.pm for details of how to influence
-# the contents of the Makefile that is written.
-WriteMakefile(
-    'PREREQ_PM' => { 'Net::LDAPapi' => 0 },
-    'NAME'	=> 'Tie::LDAP',
-    'VERSION_FROM' => 'LDAP.pm', # finds $VERSION
+
+WriteMakefile(PREREQ_PM    => { 'Net::LDAPapi' => 0 },
+              NAME         => 'Tie::LDAP',
+              VERSION_FROM => 'LDAP.pm',
+              DIR          => ['Entry'],
 );

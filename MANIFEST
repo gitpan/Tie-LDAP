@@ -1,10 +1,9 @@
 LDAP.pm
 Makefile.PL
 MANIFEST
+README.DEV
+README.LOG
 README.TXT
-test.pl
-Entry/Changes
+t/10basic.t
 Entry/Entry.pm
-Entry/MANIFEST
 Entry/Makefile.PL
-Entry/test.pl
